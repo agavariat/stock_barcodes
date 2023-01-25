@@ -4,21 +4,35 @@ from odoo import models
 
 
 class StockInventory(models.Model):
-    _inherit = ['barcodes.barcode_events_mixin', 'stock.inventory']
-    _name = 'stock.inventory'
+    _inherit = ["barcodes.barcode_events_mixin", "stock.inventory"]
+    _name = "stock.inventory"
 
     def action_barcode_scan(self):
-        action = self.env.ref(
-            'stock_barcodes.action_stock_barcodes_read_inventory').read()[0]
-        action['context'] = {
-            'default_location_id': self.location_id.id,
-            'default_product_id': self.product_id.id,
-            'default_prod_lot_id': self.lot_id.id,
-            'default_package_id': self.package_id.id,
-            'default_partner_id': self.partner_id.id,
-            'default_inventory_id': self.id,
-            'default_res_model_id':
-                self.env.ref('stock.model_stock_inventory').id,
-            'default_res_id': self.id,
+        self.start_empty = True
+        self._action_start()
+        self._check_company()
+        option_group = self.env.ref(
+            "stock_barcodes.stock_barcodes_option_group_inventory"
+        )
+        if option_group.auto_lot:
+            # Disable lot_id step required
+            option_group.option_ids.filtered(
+                lambda p: p.field_name == "lot_id"
+            ).required = False
+        vals = {
+            "inventory_id": self.id,
+            "res_model_id": self.env.ref("stock.model_stock_inventory").id,
+            "res_id": self.id,
+            "option_group_id": self.env.ref(
+                "stock_barcodes.stock_barcodes_option_group_inventory"
+            ).id,
+            "manual_entry": option_group.manual_entry,
         }
+        if option_group.get_option_value("location_id", "filled_default"):
+            vals["location_id"] = self.location_ids[:1].id
+        wiz = self.env["wiz.stock.barcodes.read.inventory"].create(vals)
+        action = self.env["ir.actions.actions"]._for_xml_id(
+            "stock_barcodes.action_stock_barcodes_read_inventory"
+        )
+        action["res_id"] = wiz.id
         return action
